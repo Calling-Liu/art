@@ -39,10 +39,14 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+    buildFeatures {
+        prefab true
+    }
 
-//    packagingOptions {
-//        exclude '**/libshadowhook.so'
-//    }
+    packagingOptions {
+        exclude '**/libbytehook.so'
+    }
+
     packagingOptions {
         exclude '**/libxdl.so'
     }
@@ -51,6 +55,7 @@ android {
 
 dependencies {
 //    implementation 'com.bytedance.android:shadowhook:1.0.8'
+    implementation 'com.bytedance:bytehook:1.0.9'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     testImplementation 'junit:junit:4.13.2'
 }

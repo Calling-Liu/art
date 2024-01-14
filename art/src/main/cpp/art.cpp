@@ -3,8 +3,18 @@
 #include <unistd.h>
 #include <asm-generic/mman-common.h>
 #include <sys/mman.h>
+#include <malloc.h>
 #include "dlopen.h"
 #include "xdllibs/include/xdl.h"
+#include "bytehook.h"
+#include <unwind.h> //引入 unwind 库
+
+struct backtrace_stack
+{
+    void** current;
+    void** end;
+};
+
 
 #define LOG_TAG            "art-hook"
 #define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, fmt, ##__VA_ARGS__)
@@ -55,6 +65,30 @@ void hookRunJit(void *task, void *thread) {
     ((TaskRunType) originFunJit)(task, thread);
     LOGE("hook End!");
 }
+
+//// plt hook
+static _Unwind_Reason_Code _unwind_callback(struct _Unwind_Context* context, void* data)
+{
+    struct backtrace_stack* state = (struct backtrace_stack*)(data);
+    uintptr_t pc = _Unwind_GetIP(context);  // 获取 pc 值，即绝对地址
+    if (pc) {
+        if (state->current == state->end) {
+            return _URC_END_OF_STACK;
+        } else {
+            *state->current++ = (void*)(pc);
+        }
+    }
+    return _URC_NO_REASON;
+}
+
+static size_t _fill_backtraces_buffer(void** buffer, size_t max)
+{
+    struct backtrace_stack stack = {buffer, buffer + max};
+    _Unwind_Backtrace(_unwind_callback, &stack);
+    return stack.current - buffer;
+}
+
+
 /**
  * 使用开源库 https://github.com/Rprop/ndk_dlopen实现的GC抑制
  *
@@ -193,11 +227,50 @@ void delayJit() {
     replaceFunc(mSlotJit, (void *) &hookRunJit);
 }
 
+void dumpBacktrace(void **buffer, size_t count) {
+    for (size_t idx = 0; idx < count; idx++) {
+        void *addr = buffer[idx];
+        Dl_info info;
+        if (dladdr(addr, &info)) {
+            const uintptr_t addr_relative = ((uintptr_t) addr - (uintptr_t) info.dli_fbase);
+            LOGE("back trace: # %d : %p : %s(%p)(%s)(%p)", idx, addr, info.dli_fname, addr_relative,  info.dli_sname, info.dli_saddr);
+        }
+    }
+}
+
+void *malloc_hook(size_t len) {
+    BYTEHOOK_STACK_SCOPE();
+    if (len > 1024 * 1024) {
+        void* buffer[100];
+        int count = _fill_backtraces_buffer(buffer, 100);
+        dumpBacktrace(buffer, count);
+        LOGE("malloc size: %d", len);
+    }
+    return BYTEHOOK_CALL_PREV(malloc_hook, len);
+}
+
+
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_ptrain_artimple_ARTHook_init(JNIEnv *env, jobject thiz) {
-    delayJit();
+    bytehook_stub_t stub = bytehook_hook_all(
+            nullptr,
+            "malloc",
+            reinterpret_cast<void *>(malloc_hook),
+            nullptr,
+            nullptr
+            );
+    LOGE("malloc start");
 }
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_ptrain_artimple_ARTHook_malloc(JNIEnv *env, jobject thiz) {
+    LOGE("malloc 88MB");
+    malloc(88 * 1024 * 1024);
+}
+
+
 
 
 
