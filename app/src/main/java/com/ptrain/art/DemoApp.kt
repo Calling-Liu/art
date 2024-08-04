@@ -10,7 +10,7 @@ class DemoApp : Application() {
         System.loadLibrary("art")
         val hook: ARTHook = ARTHook()
         hook.initLibs()
-        hook.init()
+        hook.init(1024 * 1024)
     }
 
     override fun onCreate() {

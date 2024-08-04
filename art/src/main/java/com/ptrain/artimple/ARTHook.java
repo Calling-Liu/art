@@ -7,6 +7,6 @@ public class ARTHook {
         ByteHook.init();
     }
 
-    public native void init();
+    public native void init(long minSize);
     public native void malloc();
 }
